@@ -1,0 +1,34 @@
+
+// ta/pilike_ta.c
+// author: somnathkarmakar1203@gmail.com
+
+#include <stdint.h>
+#include <tee_internal_api.h>
+#include <tee_internal_api_extensions.h>
+
+#include <pilike.h>
+#include <vm.h>
+
+TEEC_Result TA_CreateEntryPoint(void) { DMSG("has been called"); }
+
+TEEC_Result TA_OpenSessionEntryPoint(uint32_t param_types,
+                                    TEE_Param __unused params[4],
+                                    void __unused **sess_ctx) {
+  //
+}
+
+TEEC_Result TA_InvokeCommandEntryPoint(void __unused *sess_ctx,
+                                      uint32_t cmd_id,
+                                      uint32_t param_types,
+                                      TEE_Param params[4]) {
+  //
+}
+
+
+void TA_CloseSessionEntryPoint(void __unused *sess_ctx) {
+  //
+}
+
+void TA_DestroyEntryPoint(void) {
+  //
+}

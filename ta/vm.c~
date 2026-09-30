@@ -1,0 +1,6 @@
+// ta/vM.c
+// author: somnathkarmakar1203@gmail.com
+
+#include <vm.h>
+
+TEE_Result vM()
