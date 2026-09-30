@@ -13,7 +13,7 @@ int generate_x(uint32_t *matrix, uint32_t size, uint32_t q) {
   }
   uint32_t total_elements = size * size;
   uint32_t i = 0;
-  uint32_t max_acceptable = UINT32_MAX - (UINT32_MAX & q);
+  uint32_t max_acceptable = UINT32_MAX - (UINT32_MAX % q);
   while (i < total_elements) {
     uint32_t rand_val;
     if (read(urandom_fd, &rand_val, sizeof(rand_val)) != sizeof(rand_val)) {
