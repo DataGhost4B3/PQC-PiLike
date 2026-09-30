@@ -7,10 +7,12 @@
 #include <stdio.h>
 #include <string.h>
 #include <inttypes.h>
+#include <tee_client_api.h>
+#include <time.h>
 
 #include <pilike.h>
 
-uint32_t deterministic_floor_32bit(uint32_t m, uint32_t q);
+uint64_t deterministic_floor_32bit(uint32_t m, uint32_t q);
 int64_t deterministic_floor_2m_log10(int64_t m, uint64_t q);
 
 int main(void) {
@@ -29,13 +31,17 @@ int main(void) {
 
   uint32_t m; /* scanf("Enter m: %" PRIu32 "\n", &m); */
   printf("Enter m: ");
-  scanf("%" PRIu32, &m);
+  if (scanf("%" PRIu32, &m) != 1) {
+      errx(1, "Invalid input for m");
+  }
+  struct timespec start, end;
+  clock_gettime(CLOCK_MONOTONIC, &start);
   uint32_t q = m*m; printf("q chosen (q=m^2): %" PRIu32 "\n", q);
-  uint32_t n = deterministic_floor_32bit(m,q);
+  uint32_t n = deterministic_floor_32bit(m,q); printf("n: %" PRIu32 "\n", n);
   
   shm.size = n*n*sizeof(uint32_t);
-  /* shm.flags = TEEC_MEM_INPUT | TEEC_MEM_OUTPUT ; */
-  shm.flags = TEEC_MEM_SHARED_IN | TEEC_MEM_SHARED_OUT;
+  shm.flags = TEEC_MEM_INPUT | TEEC_MEM_OUTPUT ;
+  /* shm.flags = TEEC_MEM_SHARED_IN | TEEC_MEM_SHARED_OUT; */
   res = TEEC_AllocateSharedMemory(&ctx, &shm);
   if (res != TEEC_SUCCESS) {
     errx(1, "TEEC_AllocateSharedMemory failed with code 0x%x", res);
@@ -43,7 +49,7 @@ int main(void) {
   uint32_t *X = (uint32_t *)shm.buffer;
   // initialize X
   int x_init = generate_x(X, n, q);
-  
+  if (x_init!=0){errx(1, "failed to generate X");}
   
   res = TEEC_OpenSession(&ctx, &sess, &uuid, TEEC_LOGIN_PUBLIC, NULL, NULL, &err_origin);
   if (res != TEEC_SUCCESS) {
@@ -68,9 +74,13 @@ int main(void) {
   }
 
   uint32_t *P = (uint32_t *)shm.buffer;
+  clock_gettime(CLOCK_MONOTONIC, &end);
   for (uint32_t i = 0; i < n; i++){
     printf("%" PRIu32 " ", P[i]);
   }
+
+  double elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
+  printf("\n[Timing] Core Setup execution (from m to P) took: %.6f seconds\n\n", elapsed);
   
   TEEC_CloseSession(&sess);
   TEEC_ReleaseSharedMemory(&shm);
