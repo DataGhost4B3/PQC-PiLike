@@ -22,34 +22,52 @@ int main(void) {
   TEEC_Context ctx;
   TEEC_UUID uuid = PILIKE_UUID;
   uint32_t err_origin;
-  TEEC_SharedMemory shm;
 
   res = TEEC_InitializeContext(NULL, &ctx);
   if (res != TEEC_SUCCESS) {
     errx(1, "TEEC_InitializeContext failed with code 0x%x", res);
   }
 
-  uint32_t m; /* scanf("Enter m: %" PRIu32 "\n", &m); */
+  uint32_t m;
   printf("Enter m: ");
   if (scanf("%" PRIu32, &m) != 1) {
       errx(1, "Invalid input for m");
   }
+  
   struct timespec start, end;
   clock_gettime(CLOCK_MONOTONIC, &start);
-  uint32_t q = m*m; printf("q chosen (q=m^2): %" PRIu32 "\n", q);
-  uint32_t n = deterministic_floor_32bit(m,q); printf("n: %" PRIu32 "\n", n);
   
-  shm.size = n*n*sizeof(uint32_t);
-  shm.flags = TEEC_MEM_INPUT | TEEC_MEM_OUTPUT ;
-  /* shm.flags = TEEC_MEM_SHARED_IN | TEEC_MEM_SHARED_OUT; */
-  res = TEEC_AllocateSharedMemory(&ctx, &shm);
+  uint32_t q = m * m; 
+  printf("q chosen (q=m^2): %" PRIu32 "\n", q);
+  
+  uint32_t n = (uint32_t)deterministic_floor_32bit(m, q); 
+  printf("n: %" PRIu32 "\n", n);
+  
+  // 1. Allocate Shared Memory for X (Input to TA)
+  TEEC_SharedMemory shm_X;
+  shm_X.size = n * n * sizeof(uint32_t);
+  shm_X.flags = TEEC_MEM_INPUT;
+  res = TEEC_AllocateSharedMemory(&ctx, &shm_X);
   if (res != TEEC_SUCCESS) {
-    errx(1, "TEEC_AllocateSharedMemory failed with code 0x%x", res);
+    errx(1, "TEEC_AllocateSharedMemory X failed with code 0x%x", res);
   }
-  uint32_t *X = (uint32_t *)shm.buffer;
+  uint32_t *X = (uint32_t *)shm_X.buffer;
+
+  // 2. Allocate Shared Memory for P (Output from TA)
+  TEEC_SharedMemory shm_P;
+  shm_P.size = n * sizeof(uint32_t);
+  shm_P.flags = TEEC_MEM_OUTPUT;
+  res = TEEC_AllocateSharedMemory(&ctx, &shm_P);
+  if (res != TEEC_SUCCESS) {
+    errx(1, "TEEC_AllocateSharedMemory P failed with code 0x%x", res);
+  }
+  uint32_t *P = (uint32_t *)shm_P.buffer;
+
   // initialize X
   int x_init = generate_x(X, n, q);
-  if (x_init!=0){errx(1, "failed to generate X");}
+  if (x_init != 0) {
+      errx(1, "failed to generate X");
+  }
   
   res = TEEC_OpenSession(&ctx, &sess, &uuid, TEEC_LOGIN_PUBLIC, NULL, NULL, &err_origin);
   if (res != TEEC_SUCCESS) {
@@ -57,34 +75,43 @@ int main(void) {
   }
 
   memset(&op, 0, sizeof(op));
-  // op.paramTypes
-  op.paramTypes = TEEC_PARAM_TYPES(TEEC_MEMREF_WHOLE, TEEC_VALUE_INPUT, TEEC_NONE, TEEC_NONE);
+  // Update parameter types to map X to param 0 and P to param 2
+  op.paramTypes = TEEC_PARAM_TYPES(TEEC_MEMREF_WHOLE, TEEC_VALUE_INPUT, TEEC_MEMREF_WHOLE, TEEC_NONE);
   
-  op.params[0].memref.parent = &shm;
+  op.params[0].memref.parent = &shm_X;
   op.params[0].memref.offset = 0;
-  op.params[0].memref.size = shm.size;
+  op.params[0].memref.size = shm_X.size;
 
   op.params[1].value.a = n;
   op.params[1].value.b = q;
 
-  //TEEC_InvokeCommand
+  op.params[2].memref.parent = &shm_P;
+  op.params[2].memref.offset = 0;
+  op.params[2].memref.size = shm_P.size;
+
+  // TEEC_InvokeCommand
   res = TEEC_InvokeCommand(&sess, GET_P, &op, &err_origin);
   if (res != TEEC_SUCCESS) {
     errx(1, "TEEC_InvokeCommand failed with code 0x%x", res);
   }
 
-  uint32_t *P = (uint32_t *)shm.buffer;
   clock_gettime(CLOCK_MONOTONIC, &end);
-  for (uint32_t i = 0; i < n; i++){
+  
+  printf("\n[Host] Received P from Secure World (first 5 elements): ");
+  for (uint32_t i = 0; i < (n < 5 ? n : 5); i++){
     printf("%" PRIu32 " ", P[i]);
   }
+  printf("...\n");
 
   double elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
   printf("\n[Timing] Core Setup execution (from m to P) took: %.6f seconds\n\n", elapsed);
   
   TEEC_CloseSession(&sess);
-  TEEC_ReleaseSharedMemory(&shm);
+  TEEC_ReleaseSharedMemory(&shm_X);
+  TEEC_ReleaseSharedMemory(&shm_P);
   TEEC_FinalizeContext(&ctx);
+  
+  return 0;
 }
 
 /**
